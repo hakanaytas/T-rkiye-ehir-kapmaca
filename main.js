@@ -1,396 +1,394 @@
-// main.js — oyunun giriş noktası
-import { auth, db, onAuthStateChanged, signInAnonymously, updateProfile } from "./firebase-config.js";
+// main.js
+// Uygulamanın orkestrasyonu: giriş, harita, il paneli, sohbet, saldırı ve tepki akışları.
+
 import {
-  doc, setDoc, getDoc, collection, onSnapshot,
+  auth, db, onAuthStateChanged, signInAnonymously, updateProfile, colorForUid,
+} from "./firebase-config.js";
+import {
+  doc, setDoc, onSnapshot, serverTimestamp, collection, query, where, orderBy, limit,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-import { initMap, setProvinceState, flashProvince } from "./map.js";
-import { PROVINCE_NAMES, getNeighbors, areNeighbors, BUILDINGS } from "./provinces-data.js";
-import { getDisplayResources, claimProvince, upgradeBuilding, flushProvince } from "./economy.js";
-import { attackProvince, tickOccupation } from "./war.js";
+import { PROVINCE_NAMES } from "./provinces-data.js";
+import { initMap, setProvinceColor, getProvinceScreenCenter, flashProvince, getProvincePath } from "./map.js";
 import { sendMessage, listenMessages } from "./chat.js";
-import { pushNotification, listenNotifications, markRead, showToast } from "./notifications.js";
-import { computeLeaderboard } from "./leaderboard.js";
-import {
-  createAlliance, sendAllianceInvite, acceptAllianceInvite, declineAllianceInvite,
-  leaveAlliance, listenMyInvites, listenAlliance, areAllied,
-} from "./alliance.js";
+import { sendReaction, REACTIONS } from "./reactions.js";
+import { attackProvince, listenProvinceStates, listenAttacks, canAttackNow, cooldownRemaining } from "./attack.js";
+import { showToast, showBigBanner } from "./notifications.js";
 
-// ---------- Durum ----------
-let currentUser = null;   // { uid, username }
-let myAllianceId = null;
-let provincesCache = {};  // id -> data
-let selectedProvinceId = null;
-let firstNotifBatch = true;
-let unsubProvinces = null;
+// ---------------------------------------------------------------- state
+let myUid = null;
+let myName = "";
+let myColor = "#2fe6c4";
+let myTeamLabel = "";
+let myProvinceId = null;      // oyuncunun "ana ili"
+let selectedProvinceId = null; // haritada seçili / panelde açık il
+let provinceStates = {};       // id -> {capturedByName,color,label,...} | null
 
-// ---------- DOM kısayolları ----------
+let unsubMembers = null;
+let unsubChat = null;
+
+// ---------------------------------------------------------------- DOM
 const $ = (id) => document.getElementById(id);
-const loginScreen = $("login-screen");
-const gameScreen = $("game-screen");
+const onboard = $("onboard");
+const nicknameInput = $("nickname-input");
+const meName = $("me-name");
+const meDot = $("me-dot");
+const statOnline = $("stat-online");
+const statCaptured = $("stat-captured");
+const mapHint = $("map-hint");
+const provinceSheet = $("province-sheet");
+const chatSheet = $("chat-sheet");
+const pName = $("p-name");
+const pStatus = $("p-status");
+const pMeta = $("p-meta");
+const joinBtn = $("p-join-btn");
+const attackBtn = $("p-attack-btn");
+const chatToggleBtn = $("p-chat-toggle");
+const chatTitle = $("chat-title");
+const chatMessages = $("chat-messages");
+const chatForm = $("chat-form");
+const chatInput = $("chat-input");
+const emojiBar = $("emoji-bar");
 
-// ==================================================
-// GİRİŞ
-// ==================================================
-$("login-btn").addEventListener("click", handleLogin);
-$("username-input").addEventListener("keydown", (e) => { if (e.key === "Enter") handleLogin(); });
+// ---------------------------------------------------------------- onboarding
+const savedName = localStorage.getItem("fetih_nickname");
+if (savedName) nicknameInput.value = savedName;
 
-async function handleLogin() {
-  const name = $("username-input").value.trim();
-  const errEl = $("login-error");
-  errEl.textContent = "";
-  if (name.length < 2) { errEl.textContent = "Kullanıcı adı en az 2 karakter olmalı."; return; }
+$("onboard-start").addEventListener("click", startFromOnboard);
+nicknameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startFromOnboard(); });
 
-  $("login-btn").disabled = true;
-  try {
-    const cred = await signInAnonymously(auth);
-    await updateProfile(cred.user, { displayName: name });
-    await setDoc(doc(db, "players", cred.user.uid), {
-      uid: cred.user.uid,
-      username: name,
-      createdAt: Date.now(),
-      allianceId: null,
-    }, { merge: true });
-  } catch (e) {
-    errEl.textContent = "Giriş başarısız: " + e.message;
-    $("login-btn").disabled = false;
-  }
+function startFromOnboard() {
+  const name = nicknameInput.value.trim().slice(0, 16) || `Gezgin${Math.floor(Math.random() * 900 + 100)}`;
+  localStorage.setItem("fetih_nickname", name);
+  myName = name;
+  onboard.classList.add("hidden");
+  boot();
 }
 
-onAuthStateChanged(auth, async (user) => {
-  if (!user) return;
-  const playerSnap = await getDoc(doc(db, "players", user.uid));
-  const username = playerSnap.exists() ? playerSnap.data().username : (user.displayName || "Oyuncu");
-  myAllianceId = playerSnap.exists() ? playerSnap.data().allianceId : null;
-  currentUser = { uid: user.uid, username };
-
-  loginScreen.classList.add("hidden");
-  gameScreen.classList.remove("hidden");
-  $("player-name").textContent = username;
-
-  await boot();
+$("me-btn").addEventListener("click", () => {
+  const next = window.prompt("Ekip etiketin (illeri ele geçirince görünür, ör. \"Hakan'ın Ekibi\"):", myTeamLabel || `${myName}'in Ekibi`);
+  if (next === null) return;
+  myTeamLabel = next.trim().slice(0, 24);
+  savePlayerDoc();
 });
 
-// ==================================================
-// BOOT
-// ==================================================
-async function boot() {
-  try {
-    await initMap($("map-svg"), onProvinceClick);
-    $("map-loading").classList.add("hidden");
-  } catch (e) {
-    $("map-loading").textContent = "Harita yüklenemedi. Bağlantınızı kontrol edin.";
-    console.error(e);
-    return;
-  }
-
-  subscribeProvinces();
-  subscribeNotifications();
-  subscribeChat();
-  subscribeAllianceInvites();
-  if (myAllianceId) subscribeMyAlliance();
-}
-
-// ==================================================
-// HARİTA / İL VERİSİ
-// ==================================================
-function subscribeProvinces() {
-  if (unsubProvinces) unsubProvinces();
-  unsubProvinces = onSnapshot(collection(db, "provinces"), (snap) => {
-    snap.docChanges().forEach((change) => {
-      const id = Number(change.doc.id);
-      const data = change.doc.data();
-      provincesCache[id] = data;
-      recolorProvince(id, data);
-      if (change.type === "modified") flashProvince(id);
-    });
-    if (selectedProvinceId != null) renderProvincePanel(selectedProvinceId);
-  });
-}
-
-function recolorProvince(id, data) {
-  if (!data || !data.ownerUid) { setProvinceState(id, "neutral"); return; }
-  if (data.ownerUid === currentUser.uid) {
-    setProvinceState(id, data.status === "occupied" ? "occupied" : "owned");
-    return;
-  }
-  if (myAllianceId && data.ownerAllianceId === myAllianceId) {
-    setProvinceState(id, "ally");
-    return;
-  }
-  setProvinceState(id, "enemy");
-}
-
-function onProvinceClick(id) {
-  selectedProvinceId = id;
-  renderProvincePanel(id);
-  openPanel("province-panel");
-}
-
-// ==================================================
-// İL PANELİ
-// ==================================================
-function renderProvincePanel(id) {
-  const data = provincesCache[id] || { status: "neutral" };
-  const name = PROVINCE_NAMES[id] || "?";
-  $("pp-name").textContent = name;
-
-  const isMine = data.ownerUid === currentUser.uid;
-  const isNeutral = !data.ownerUid;
-  const isNeighbor = areNeighbors(getOwnedProvinceNear(id), id);
-
-  let statusText = "Tarafsız il";
-  if (data.ownerUid) {
-    statusText = `${isMine ? "Sizin iliniz" : data.ownerName + " iline ait"}`;
-    if (data.status === "occupied") statusText += " · İŞGAL ALTINDA";
-  }
-  $("pp-status").textContent = statusText;
-
-  // Kaynaklar
-  const res = isNeutral ? { gold: 0, food: 0, iron: 0, soldiers: 0, defense: 0 } : getDisplayResources(data);
-  const resGrid = $("pp-resources");
-  resGrid.innerHTML = "";
-  const resourceLabels = { gold: "💰 Altın", food: "🌾 Gıda", iron: "⛏️ Demir", soldiers: "🪖 Asker", defense: "🛡️ Savunma" };
-  for (const [key, label] of Object.entries(resourceLabels)) {
-    const div = document.createElement("div");
-    div.innerHTML = `${label}<b>${Math.floor(res[key] || 0)}</b>`;
-    resGrid.appendChild(div);
-  }
-
-  // Binalar (sadece kendi ilinde)
-  const buildingsWrap = $("pp-buildings");
-  buildingsWrap.innerHTML = "";
-  if (isMine && data.status !== "occupied") {
-    for (const b of Object.values(BUILDINGS)) {
-      const level = (data.buildings && data.buildings[b.key]) || 0;
-      const row = document.createElement("div");
-      row.className = "building-row";
-      row.innerHTML = `<span>${b.label} · Sev. ${level}</span>`;
-      const btn = document.createElement("button");
-      btn.textContent = "Yükselt";
-      btn.addEventListener("click", () => doUpgrade(id, b.key));
-      row.appendChild(btn);
-      buildingsWrap.appendChild(row);
-    }
-  }
-
-  // Eylemler
-  const actions = $("pp-actions");
-  actions.innerHTML = "";
-
-  if (isNeutral) {
-    const hasAdjacentOwned = getNeighbors(id).some((nid) => provincesCache[nid]?.ownerUid === currentUser.uid);
-    const anyOwned = Object.values(provincesCache).some((p) => p.ownerUid === currentUser.uid);
-    const canClaim = !anyOwned || hasAdjacentOwned;
-    const btn = document.createElement("button");
-    btn.textContent = anyOwned ? "Bu ile Yerleş (komşu olmalı)" : "Bu İli Başlangıç İli Yap";
-    btn.disabled = !canClaim;
-    btn.addEventListener("click", () => doClaim(id));
-    actions.appendChild(btn);
-  } else if (!isMine) {
-    const myNeighborProvince = getNeighbors(id).find((nid) => provincesCache[nid]?.ownerUid === currentUser.uid);
-    const btn = document.createElement("button");
-    btn.textContent = "⚔️ Saldır";
-    btn.disabled = !myNeighborProvince;
-    btn.title = myNeighborProvince ? "" : "Saldırmak için komşu bir iliniz olmalı";
-    btn.addEventListener("click", () => doAttack(myNeighborProvince, id));
-    actions.appendChild(btn);
-  } else {
-    const info = document.createElement("p");
-    info.style.fontSize = "12px";
-    info.style.color = "var(--muted)";
-    info.textContent = data.status === "occupied"
-      ? "İşgal altında: huzursuzluk zamanla düşecek, sonra tam entegre olacak."
-      : "Kaynaklarınızı geliştirin ve komşu illere yayılın.";
-    actions.appendChild(info);
-    if (data.status === "occupied") tickOccupation(id).catch(() => {});
-  }
-}
-
-function getOwnedProvinceNear(id) {
-  // yardımcı: sadece panel metni için, gerçek saldırı kontrolü ayrı yapılır
-  return id;
-}
-
-async function doClaim(id) {
-  try {
-    await claimProvince(id, currentUser.uid, currentUser.username);
-    showToast("info", `${PROVINCE_NAMES[id]} ilini aldınız!`);
-  } catch (e) {
-    showToast("info", e.message);
-  }
-}
-
-async function doUpgrade(id, buildingKey) {
-  try {
-    await upgradeBuilding(id, buildingKey, currentUser.uid);
-    showToast("resource", `${BUILDINGS[buildingKey].label} geliştirildi.`);
-    renderProvincePanel(id);
-  } catch (e) {
-    showToast("info", e.message);
-  }
-}
-
-async function doAttack(fromId, toId) {
-  try {
-    const result = await attackProvince(fromId, toId, currentUser.uid, currentUser.username);
-    if (result.outcome === "conquered") showToast("conquest", `${PROVINCE_NAMES[toId]} ilini fethettiniz! 🏆`);
-    else if (result.outcome === "attacker_advantage") showToast("attack", "Saldırı başarılı, savunma zayıfladı.");
-    else showToast("attack", "Saldırı püskürtüldü.");
-    renderProvincePanel(toId);
-  } catch (e) {
-    showToast("info", e.message);
-  }
-}
-
-// ==================================================
-// PANEL AÇMA/KAPAMA
-// ==================================================
-function openPanel(id) {
-  document.querySelectorAll(".panel").forEach((p) => p.classList.add("hidden"));
-  $(id).classList.remove("hidden");
-}
-document.querySelectorAll("[data-close]").forEach((btn) => {
-  btn.addEventListener("click", () => $(btn.dataset.close).classList.add("hidden"));
-});
-
-$("leaderboard-btn").addEventListener("click", async () => {
-  openPanel("leaderboard-panel");
-  const rows = await computeLeaderboard();
-  const body = $("leaderboard-body");
-  body.innerHTML = rows.map((r, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td>${r.name}${r.uid === currentUser.uid ? " (Siz)" : ""}</td>
-      <td>${r.provinces}</td>
-      <td>${Math.floor(r.soldiers)}</td>
-      <td>${Math.floor(r.score)}</td>
-    </tr>`).join("");
-});
-
-$("notif-btn").addEventListener("click", () => openPanel("notif-panel"));
-$("chat-toggle-btn").addEventListener("click", () => openPanel("chat-panel"));
-$("chat-toggle-mobile").addEventListener("click", () => openPanel("chat-panel"));
-
-// ==================================================
-// SOHBET
-// ==================================================
-function subscribeChat() {
-  listenMessages((messages) => {
-    const wrap = $("chat-messages");
-    wrap.innerHTML = messages.map((m) => `
-      <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
-        <span class="who">${m.username}</span>${escapeHtml(m.text)}
-      </div>`).join("");
-    wrap.scrollTop = wrap.scrollHeight;
-  });
-}
-$("chat-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const input = $("chat-input");
-  if (!input.value.trim()) return;
-  sendMessage(currentUser.uid, currentUser.username, input.value);
-  input.value = "";
-});
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-// ==================================================
-// BİLDİRİMLER
-// ==================================================
-function subscribeNotifications() {
-  listenNotifications(currentUser.uid, (items) => {
-    const unread = items.filter((i) => !i.read);
-    $("notif-dot").classList.toggle("hidden", unread.length === 0);
-
-    $("notif-list").innerHTML = items.map((i) => `
-      <div class="notif-item ${i.read ? "" : "unread"}" data-id="${i.id}">${escapeHtml(i.text)}</div>
-    `).join("") || `<p style="color:var(--muted);font-size:13px;">Henüz bildirim yok.</p>`;
-
-    document.querySelectorAll("#notif-list .notif-item").forEach((el) => {
-      el.addEventListener("click", () => markRead(currentUser.uid, el.dataset.id));
-    });
-
-    if (!firstNotifBatch) {
-      const newest = items[0];
-      if (newest && !newest.read) showToast(newest.type, newest.text);
-    }
-    firstNotifBatch = false;
-  });
-}
-
-// ==================================================
-// İTTİFAK
-// ==================================================
-function subscribeAllianceInvites() {
-  listenMyInvites(currentUser.uid, (invites) => renderAlliancePanel(invites, null));
-}
-function subscribeMyAlliance() {
-  listenAlliance(myAllianceId, (alliance) => renderAlliancePanel(null, alliance));
-}
-
-let lastInvites = [];
-let lastAlliance = null;
-function renderAlliancePanel(invites, alliance) {
-  if (invites) lastInvites = invites;
-  if (alliance !== null) lastAlliance = alliance;
-  const body = $("alliance-body");
-
-  if (!myAllianceId) {
-    body.innerHTML = `
-      <input id="alliance-name-input" type="text" maxlength="24" placeholder="İttifak adı" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;" />
-      <button id="create-alliance-btn" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer;">İttifak Kur</button>
-      <h3 style="margin-top:20px;font-size:14px;">Davetler</h3>
-      <div>${lastInvites.map((inv) => `
-        <div class="notif-item" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-          <span>${escapeHtml(inv.allianceName)}</span>
-          <span>
-            <button data-accept="${inv.id}" data-alliance="${inv.allianceId}">Kabul</button>
-            <button data-decline="${inv.id}">Reddet</button>
-          </span>
-        </div>`).join("") || "<p style='color:var(--muted);font-size:13px;'>Davet yok.</p>"}</div>
-    `;
-    $("create-alliance-btn")?.addEventListener("click", async () => {
-      const name = $("alliance-name-input").value.trim();
-      if (!name) return;
-      myAllianceId = await createAlliance(name, currentUser.uid, currentUser.username);
-      subscribeMyAlliance();
-    });
-    body.querySelectorAll("[data-accept]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        await acceptAllianceInvite(btn.dataset.accept, btn.dataset.alliance, currentUser.uid, currentUser.username);
-        myAllianceId = btn.dataset.alliance;
-        subscribeMyAlliance();
+// ---------------------------------------------------------------- boot / auth
+let booted = false;
+function boot() {
+  if (booted) return;
+  booted = true;
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      myUid = user.uid;
+      myColor = colorForUid(myUid);
+      meDot.style.background = myColor;
+      meName.textContent = myName;
+      updateProfile(user, { displayName: myName }).catch(() => {});
+      listenSelf();
+      savePlayerDoc();
+      setInterval(savePlayerDoc, 25000); // varlık (presence) sinyali
+      startMap();
+    } else {
+      signInAnonymously(auth).catch((err) => {
+        console.error(err);
+        showToast("Bağlantı kurulamadı, sayfayı yenile.", "⚠️");
       });
-    });
-    body.querySelectorAll("[data-decline]").forEach((btn) => {
-      btn.addEventListener("click", () => declineAllianceInvite(btn.dataset.decline));
-    });
-  } else {
-    const members = lastAlliance ? Object.values(lastAlliance.memberNames || {}) : [];
-    body.innerHTML = `
-      <p><b>${lastAlliance ? escapeHtml(lastAlliance.name) : "…"}</b></p>
-      <p style="font-size:13px;color:var(--muted);">Üyeler: ${members.map(escapeHtml).join(", ") || "…"}</p>
-      <button id="leave-alliance-btn" style="margin-top:10px;padding:8px 12px;border-radius:8px;border:1px solid var(--enemy);color:var(--enemy);background:none;cursor:pointer;">İttifaktan Ayrıl</button>
-    `;
-    $("leave-alliance-btn")?.addEventListener("click", async () => {
-      await leaveAlliance(myAllianceId, currentUser.uid);
-      myAllianceId = null;
-      renderAlliancePanel(lastInvites, null);
-    });
-  }
+    }
+  });
 }
 
-// Menüye ittifak butonu ekle (topbar'a dinamik)
-window.addEventListener("DOMContentLoaded", () => {
-  const btn = document.createElement("button");
-  btn.className = "icon-btn";
-  btn.title = "İttifak";
-  btn.textContent = "🤝";
-  btn.addEventListener("click", () => openPanel("alliance-panel"));
-  $("chat-toggle-btn").insertAdjacentElement("beforebegin", btn);
+function savePlayerDoc() {
+  if (!myUid) return;
+  setDoc(doc(db, "players", myUid), {
+    name: myName,
+    color: myColor,
+    teamLabel: myTeamLabel || `${myName}'in Ekibi`,
+    provinceId: myProvinceId,
+    lastSeen: serverTimestamp(),
+  }, { merge: true }).catch(() => {});
+}
+
+function listenSelf() {
+  onSnapshot(doc(db, "players", myUid), (snap) => {
+    const data = snap.data();
+    if (!data) return;
+    myProvinceId = data.provinceId ?? null;
+    myTeamLabel = data.teamLabel || myTeamLabel;
+    renderProvinceSheet();
+  });
+
+  // Toplam aktif oyuncu sayacı (basit; son 15 dk aktif olanlar).
+  onSnapshot(collection(db, "players"), (snap) => {
+    const now = Date.now();
+    let online = 0;
+    snap.forEach((d) => {
+      const ls = d.data().lastSeen;
+      const ms = ls?.toMillis ? ls.toMillis() : (ls ? Date.parse(ls) : 0);
+      if (now - ms < 15 * 60 * 1000) online++;
+    });
+    statOnline.querySelector("b").textContent = String(online || snap.size);
+  });
+}
+
+// ---------------------------------------------------------------- harita
+async function startMap() {
+  const svg = $("map-svg");
+  try {
+    await initMap(svg, onProvinceClick);
+  } catch (e) {
+    console.error(e);
+    $("map-loading").textContent = "Harita yüklenemedi. Bağlantını kontrol edip sayfayı yenile.";
+    return;
+  }
+  $("map-loading").classList.add("hidden");
+
+  listenProvinceStates((states) => {
+    provinceStates = states;
+    let capturedCount = 0;
+    for (const idStr of Object.keys(PROVINCE_NAMES)) {
+      const s = states[idStr];
+      setProvinceColor(Number(idStr), s ? s.color : null);
+      if (s) capturedCount++;
+    }
+    statCaptured.querySelector("b").textContent = String(capturedCount);
+    if (selectedProvinceId) renderProvinceSheet();
+  });
+
+  listenAttacks((attack) => playAttackAnimation(attack));
+
+  // Global (tüm illerdeki) tepkileri dinleyip haritada patlatmak için:
+  onSnapshotAllReactions();
+}
+
+let prevSelectedPath = null;
+function onProvinceClick(id) {
+  if (prevSelectedPath) prevSelectedPath.classList.remove("selected");
+  const path = getProvincePath(id);
+  if (path) { path.classList.add("selected"); prevSelectedPath = path; }
+
+  selectedProvinceId = id;
+  mapHint.classList.add("hidden");
+  openProvinceSheet(id);
+}
+
+// ---------------------------------------------------------------- il paneli
+function openProvinceSheet(id) {
+  renderProvinceSheet();
+  provinceSheet.classList.add("open");
+
+  if (unsubMembers) unsubMembers();
+  const q = query(collection(db, "players"), where("provinceId", "==", id));
+  unsubMembers = onSnapshot(q, (snap) => {
+    const count = snap.size;
+    pMeta.textContent = `${count} oyuncu bu ilde`;
+  });
+}
+
+function renderProvinceSheet() {
+  if (!selectedProvinceId) return;
+  const id = selectedProvinceId;
+  const name = PROVINCE_NAMES[id];
+  const state = provinceStates[id];
+
+  pName.textContent = name;
+  pStatus.textContent = state ? "🔥 ELE GEÇİRİLMİŞ" : "SAHİPSİZ İL";
+  pStatus.style.color = state ? "var(--gold)" : "var(--teal)";
+
+  const isHome = myProvinceId === id;
+  joinBtn.textContent = isHome ? "Ana İlin ✓" : "Bu İle Katıl";
+  joinBtn.disabled = isHome;
+
+  attackBtn.disabled = !myProvinceId || isHome;
+  attackBtn.textContent = state ? "Yeniden Ele Geçir ⚔️" : "Saldır ⚔️";
+
+  chatTitle.textContent = `${name} Sohbeti`;
+}
+
+$("p-close").addEventListener("click", () => {
+  provinceSheet.classList.remove("open");
+  if (prevSelectedPath) prevSelectedPath.classList.remove("selected");
+  selectedProvinceId = null;
+  if (unsubMembers) unsubMembers();
 });
+
+joinBtn.addEventListener("click", () => {
+  if (!selectedProvinceId) return;
+  myProvinceId = selectedProvinceId;
+  savePlayerDoc();
+  showToast(`${PROVINCE_NAMES[selectedProvinceId]} artık ana ilin!`, "🏠");
+  renderProvinceSheet();
+});
+
+attackBtn.addEventListener("click", async () => {
+  if (!myProvinceId || !selectedProvinceId) return;
+  if (!canAttackNow()) {
+    showToast(`Biraz bekle: ${Math.ceil(cooldownRemaining() / 1000)}sn`, "⏳");
+    return;
+  }
+  const res = await attackProvince({
+    fromProvinceId: myProvinceId,
+    toProvinceId: selectedProvinceId,
+    uid: myUid,
+    playerName: myName,
+    color: myColor,
+    label: myTeamLabel || `${myName}'in Ekibi`,
+  });
+  if (res.ok) {
+    showToast(`${PROVINCE_NAMES[myProvinceId]} → ${PROVINCE_NAMES[selectedProvinceId]} saldırısı yola çıktı!`, "⚔️");
+  }
+});
+
+// ---------------------------------------------------------------- saldırı animasyonu
+function playAttackAnimation(attack) {
+  const from = getProvinceScreenCenter(attack.from);
+  const to = getProvinceScreenCenter(attack.to);
+  if (!from || !to) return;
+  const fx = $("fx-layer");
+
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy);
+  const duration = Math.min(1.4, Math.max(0.5, dist / 700));
+
+  const proj = document.createElement("div");
+  proj.className = "fx-projectile";
+  proj.textContent = "⚔️";
+  proj.style.offsetPath = `path('M${from.x},${from.y} L${to.x},${to.y}')`;
+  proj.style.animationDuration = `${duration}s`;
+  fx.appendChild(proj);
+
+  setTimeout(() => {
+    proj.remove();
+    const boom = document.createElement("div");
+    boom.className = "fx-boom";
+    boom.textContent = "💥";
+    boom.style.left = `${to.x}px`;
+    boom.style.top = `${to.y}px`;
+    fx.appendChild(boom);
+
+    const ring = document.createElement("div");
+    ring.className = "fx-ring";
+    ring.style.left = `${to.x}px`;
+    ring.style.top = `${to.y}px`;
+    fx.appendChild(ring);
+
+    flashProvince(attack.to);
+    setTimeout(() => { boom.remove(); ring.remove(); }, 900);
+
+    showBigBanner(`${PROVINCE_NAMES[attack.to].toLocaleUpperCase("tr")} ELE GEÇİRİLDİ!`, `${attack.byName} saldırdı`);
+    addFloatingLabel(attack.to);
+  }, duration * 1000);
+}
+
+function addFloatingLabel(provinceId) {
+  const pos = getProvinceScreenCenter(provinceId);
+  if (!pos) return;
+  const layer = $("label-layer");
+  const state = provinceStates[provinceId];
+  const label = state?.label || state?.capturedByName || "";
+  if (!label) return;
+  const el = document.createElement("div");
+  el.className = "floating-label";
+  el.textContent = label;
+  el.style.left = `${pos.x}px`;
+  el.style.top = `${pos.y}px`;
+  layer.appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+// ---------------------------------------------------------------- sohbet paneli
+chatToggleBtn.addEventListener("click", () => {
+  chatSheet.classList.add("open");
+  bindChat(selectedProvinceId);
+});
+$("chat-close").addEventListener("click", () => {
+  chatSheet.classList.remove("open");
+  if (unsubChat) unsubChat();
+});
+
+function bindChat(provinceId) {
+  if (unsubChat) unsubChat();
+  chatMessages.innerHTML = "";
+  unsubChat = listenMessages(provinceId, (msgs) => {
+    chatMessages.innerHTML = "";
+    if (msgs.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "chat-empty";
+      empty.textContent = "Henüz mesaj yok. İlk mesajı sen at! 👋";
+      chatMessages.appendChild(empty);
+    }
+    for (const m of msgs) chatMessages.appendChild(renderMessage(m));
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  });
+}
+
+function renderMessage(m) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg" + (m.uid === myUid ? " mine" : "") + (m.kind === "reaction" ? " reaction" : "");
+
+  const avatar = document.createElement("div");
+  avatar.className = "msg-avatar";
+  avatar.style.background = m.color || "#2fe6c4";
+  avatar.textContent = (m.name || "?").slice(0, 1).toLocaleUpperCase("tr");
+
+  const bubbleWrap = document.createElement("div");
+  const nameEl = document.createElement("div");
+  nameEl.className = "msg-name";
+  nameEl.textContent = m.name || "Anonim";
+  const bubble = document.createElement("div");
+  bubble.className = "msg-bubble";
+  bubble.textContent = m.kind === "reaction" ? m.emoji : m.text;
+
+  bubbleWrap.appendChild(nameEl);
+  bubbleWrap.appendChild(bubble);
+  wrap.appendChild(avatar);
+  wrap.appendChild(bubbleWrap);
+  return wrap;
+}
+
+chatForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = chatInput.value;
+  if (!text.trim() || !selectedProvinceId) return;
+  sendMessage({ provinceId: selectedProvinceId, uid: myUid, name: myName, color: myColor, text });
+  chatInput.value = "";
+});
+
+// ---------------------------------------------------------------- emoji / nesne barı
+for (const r of REACTIONS) {
+  const btn = document.createElement("button");
+  btn.className = "emoji-btn";
+  btn.type = "button";
+  btn.title = r.label;
+  btn.textContent = r.emoji;
+  btn.addEventListener("click", () => {
+    if (!selectedProvinceId) return;
+    sendMessage({ provinceId: selectedProvinceId, uid: myUid, name: myName, color: myColor, text: "", kind: "reaction", emoji: r.emoji });
+    sendReaction({ provinceId: selectedProvinceId, uid: myUid, name: myName, emoji: r.emoji });
+  });
+  emojiBar.appendChild(btn);
+}
+
+function onSnapshotAllReactions() {
+  // Herhangi bir ilde gönderilen tepkiyi haritada patlat (o il ekranda görünmese de).
+  const q = query(collection(db, "reactions"), orderBy("ts", "desc"), limit(20));
+  let first = true;
+  onSnapshot(q, (snap) => {
+    if (first) { first = false; return; }
+    snap.docChanges().forEach((change) => {
+      if (change.type !== "added") return;
+      burstReactionOnMap(change.doc.data());
+    });
+  });
+}
+
+function burstReactionOnMap(data) {
+  const pos = getProvinceScreenCenter(data.provinceId);
+  if (!pos) return;
+  const fx = $("fx-layer");
+  const el = document.createElement("div");
+  el.className = "fx-reaction";
+  el.textContent = data.emoji;
+  el.style.left = `${pos.x + (Math.random() * 30 - 15)}px`;
+  el.style.top = `${pos.y}px`;
+  fx.appendChild(el);
+  setTimeout(() => el.remove(), 1900);
+}

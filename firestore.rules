@@ -8,45 +8,37 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // İller: herkes okuyabilir. Yazma işlemleri client-side transaction ile yapılır;
-    // burada en azından "giriş yapılmış olmalı" ve "kendi ilini iddia etmeli" kontrolü var.
-    // Not: Tam sunucu-taraflı doğrulama (ör. asker sayısı hile kontrolü) için
-    // Cloud Functions + bu koleksiyona sadece Functions'ın yazması önerilir.
+    // İller: herkes okuyabilir. "Ele geçirme" client-authoritative (v1) çalışır;
+    // giriş yapmış herkes güncelleyebilir (basit, eğlence amaçlı sistem).
     match /provinces/{provinceId} {
       allow read: if true;
       allow write: if request.auth != null;
+
+      // Her ile ait GEÇİCİ sohbet mesajları.
+      match /messages/{messageId} {
+        allow read: if true;
+        allow create: if request.auth != null
+                       && request.resource.data.uid == request.auth.uid;
+        allow update, delete: if false;
+      }
     }
 
-    // Sohbet: giriş yapmış herkes okuyabilir/yazabilir, sadece kendi adına mesaj atabilir.
-    match /messages/{messageId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+    // Saldırı olayları: sadece animasyon/bildirim tetiklemek için kullanılır.
+    match /attacks/{attackId} {
+      allow read: if true;
+      allow create: if request.auth != null
+                     && request.resource.data.byUid == request.auth.uid;
       allow update, delete: if false;
     }
 
-    // Bildirimler: sadece sahibi okuyabilir/işaretleyebilir; herkes (auth'lu) yeni bildirim yazabilir.
-    match /notifications/{uid}/items/{itemId} {
-      allow read, update: if request.auth != null && request.auth.uid == uid;
-      allow create: if request.auth != null;
-      allow delete: if false;
-    }
-
-    // İttifaklar
-    match /alliances/{allianceId} {
+    // Emoji/nesne tepkileri: gönderen kısa süre sonra kendi kaydını siler.
+    match /reactions/{reactionId} {
       allow read: if true;
-      allow write: if request.auth != null;
-    }
-    match /allianceInvites/{inviteId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.fromUid == request.auth.uid;
-      allow update: if request.auth != null;
-    }
-
-    // Savaş kayıtları: herkes okuyabilir, giriş yapmış herkes yazabilir (client-authoritative v1).
-    match /wars/{warId} {
-      allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if false;
+      allow create: if request.auth != null
+                     && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null
+                     && resource.data.uid == request.auth.uid;
+      allow update: if false;
     }
   }
 }
