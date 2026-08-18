@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Türkiye Fetih</title>
+<meta name="description" content="Gerçek zamanlı çok oyunculu Türkiye il fethetme stratejisi." />
+<meta name="theme-color" content="#ffffff" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Yatay çevirme uyarısı (sadece mobil dikey modda görünür) -->
+<div id="rotate-warning" class="rotate-warning">
+  <div class="rotate-warning-inner">
+    <div class="rotate-icon">📱</div>
+    <p>Oyuna devam etmek için telefonu yatay çevir.</p>
+  </div>
+</div>
+
+<!-- GİRİŞ EKRANI -->
+<div id="login-screen" class="screen">
+  <div class="login-box">
+    <h1>🇹🇷 Türkiye Fetih</h1>
+    <p class="subtitle">Bir il seç, devletini kur.</p>
+    <input id="username-input" type="text" maxlength="16" placeholder="Kullanıcı adın" autocomplete="off" />
+    <button id="login-btn">Oyuna Gir</button>
+    <p id="login-error" class="error-text"></p>
+  </div>
+</div>
+
+<!-- OYUN EKRANI -->
+<div id="game-screen" class="screen hidden">
+
+  <!-- Üst bar -->
+  <header class="topbar">
+    <div class="brand">🇹🇷 Türkiye Fetih</div>
+    <div class="topbar-actions">
+      <button id="leaderboard-btn" class="icon-btn" title="Sıralama">🏆</button>
+      <button id="notif-btn" class="icon-btn" title="Bildirimler">🔔<span id="notif-dot" class="dot hidden"></span></button>
+      <button id="chat-toggle-btn" class="icon-btn chat-toggle-pc" title="Sohbet">💬 Sohbet</button>
+      <span id="player-name" class="player-name"></span>
+    </div>
+  </header>
+
+  <!-- Harita -->
+  <main class="map-wrap">
+    <svg id="map-svg"></svg>
+    <div id="map-loading" class="map-loading">Harita yükleniyor…</div>
+  </main>
+
+  <!-- İl paneli -->
+  <aside id="province-panel" class="panel province-panel hidden">
+    <button class="panel-close" data-close="province-panel">✕</button>
+    <h2 id="pp-name">—</h2>
+    <div id="pp-status" class="pp-status"></div>
+
+    <div id="pp-resources" class="resource-grid"></div>
+
+    <div id="pp-buildings" class="buildings-list"></div>
+
+    <div id="pp-actions" class="pp-actions"></div>
+  </aside>
+
+  <!-- Bildirim merkezi -->
+  <aside id="notif-panel" class="panel notif-panel hidden">
+    <button class="panel-close" data-close="notif-panel">✕</button>
+    <h2>Bildirimler</h2>
+    <div id="notif-list" class="notif-list"></div>
+  </aside>
+
+  <!-- Sıralama -->
+  <aside id="leaderboard-panel" class="panel leaderboard-panel hidden">
+    <button class="panel-close" data-close="leaderboard-panel">✕</button>
+    <h2>🏆 Sıralama</h2>
+    <table class="leaderboard-table">
+      <thead><tr><th>#</th><th>Oyuncu</th><th>İl</th><th>Asker</th><th>Puan</th></tr></thead>
+      <tbody id="leaderboard-body"></tbody>
+    </table>
+  </aside>
+
+  <!-- İttifak paneli -->
+  <aside id="alliance-panel" class="panel alliance-panel hidden">
+    <button class="panel-close" data-close="alliance-panel">✕</button>
+    <h2>🤝 İttifak</h2>
+    <div id="alliance-body"></div>
+  </aside>
+
+  <!-- Sohbet: PC'de açılır panel, mobilde floating -->
+  <aside id="chat-panel" class="panel chat-panel hidden">
+    <button class="panel-close" data-close="chat-panel">✕</button>
+    <h2>💬 Sohbet</h2>
+    <div id="chat-messages" class="chat-messages"></div>
+    <form id="chat-form" class="chat-form">
+      <input id="chat-input" type="text" maxlength="300" placeholder="Mesaj yaz…" autocomplete="off" />
+      <button type="submit">Gönder</button>
+    </form>
+  </aside>
+
+  <button id="chat-toggle-mobile" class="chat-toggle-mobile">💬</button>
+
+  <div id="toast-container" class="toast-container"></div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
