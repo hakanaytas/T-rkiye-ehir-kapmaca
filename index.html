@@ -2,108 +2,109 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-<title>Canlı Türkiye Haritası — Sosyal Oyun</title>
-<meta name="description" content="81 ili seç, ekibini kur, sohbet et, emoji at, komşu illere eğlenceli saldırılar düzenle. Canlı, sosyal Türkiye haritası oyunu." />
-<meta name="theme-color" content="#0B1120" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Türkiye Fetih</title>
+<meta name="description" content="Gerçek zamanlı çok oyunculu Türkiye il fethetme stratejisi." />
+<meta name="theme-color" content="#ffffff" />
 <link rel="manifest" href="manifest.json" />
-<link rel="icon" href="icon-192.png" />
-<link rel="apple-touch-icon" href="icon-192.png" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
-<!-- ============ Takma ad / giriş ekranı ============ -->
-<div id="onboard" class="onboard">
-  <div class="onboard-card">
-    <div class="onboard-crest">🗺️</div>
-    <h1>Canlı Türkiye Haritası</h1>
-    <p class="onboard-sub">81 il, tek harita, sonsuz eğlence. Bir il seç, ekibine katıl, sohbet et, saldır!</p>
-    <label class="onboard-label" for="nickname-input">Rumuzun</label>
-    <input id="nickname-input" class="onboard-input" type="text" maxlength="16" placeholder="ör. Hakan34" autocomplete="off" />
-    <button id="onboard-start" class="btn btn-primary btn-block">Haritaya Gir 🚀</button>
-    <p class="onboard-note">Rumuzun herkese açık görünür. Kişisel bilgi paylaşma.</p>
+<!-- Yatay çevirme uyarısı (sadece mobil dikey modda görünür) -->
+<div id="rotate-warning" class="rotate-warning">
+  <div class="rotate-warning-inner">
+    <div class="rotate-icon">📱</div>
+    <p>Oyuna devam etmek için telefonu yatay çevir.</p>
   </div>
 </div>
 
-<!-- ============ Üst bar ============ -->
-<header class="topbar">
-  <div class="topbar-brand">
-    <span class="topbar-logo">🗺️</span>
-    <span class="topbar-title">Türkiye<strong>Canlı</strong></span>
+<!-- GİRİŞ EKRANI -->
+<div id="login-screen" class="screen">
+  <div class="login-box">
+    <h1>🇹🇷 Türkiye Fetih</h1>
+    <p class="subtitle">Bir il seç, devletini kur.</p>
+    <input id="username-input" type="text" maxlength="16" placeholder="Kullanıcı adın" autocomplete="off" />
+    <button id="login-btn">Oyuna Gir</button>
+    <p id="login-error" class="error-text"></p>
   </div>
-  <div class="topbar-stats">
-    <span class="pill" id="stat-online" title="Aktif oyuncu">👤 <b>0</b></span>
-    <span class="pill" id="stat-captured" title="Ele geçirilmiş il">🔥 <b>0</b>/81</span>
-  </div>
-  <button id="me-btn" class="me-chip" title="Profilim">
-    <span id="me-dot" class="me-dot"></span>
-    <span id="me-name">—</span>
-  </button>
-</header>
+</div>
 
-<!-- ============ Harita ============ -->
-<main class="map-wrap">
-  <svg id="map-svg" aria-label="Türkiye haritası"></svg>
-  <div id="map-loading" class="map-loading">Harita yükleniyor…</div>
+<!-- OYUN EKRANI -->
+<div id="game-screen" class="screen hidden">
 
-  <!-- Uçan saldırı / emoji efektleri bu katmana eklenir -->
-  <div id="fx-layer" class="fx-layer"></div>
-
-  <!-- İl üstü geçici etiketler (ör. "HAKAN'IN EKİBİ") -->
-  <div id="label-layer" class="label-layer"></div>
-
-  <div class="map-hint" id="map-hint">Bir il seçmek için haritaya dokun</div>
-</main>
-
-<!-- ============ Bildirimler ============ -->
-<div id="toast-container" class="toast-container"></div>
-<div id="banner-container" class="banner-container"></div>
-
-<!-- ============ Alt panel: seçili il ============ -->
-<section id="province-sheet" class="sheet province-sheet">
-  <div class="sheet-handle"></div>
-  <div class="sheet-head">
-    <div>
-      <div class="sheet-eyebrow" id="p-status">SEÇİLİ İL</div>
-      <h2 id="p-name">—</h2>
-      <div class="sheet-meta" id="p-meta"></div>
+  <!-- Üst bar -->
+  <header class="topbar">
+    <div class="brand">🇹🇷 Türkiye Fetih</div>
+    <div class="topbar-actions">
+      <button id="leaderboard-btn" class="icon-btn" title="Sıralama">🏆</button>
+      <button id="notif-btn" class="icon-btn" title="Bildirimler">🔔<span id="notif-dot" class="dot hidden"></span></button>
+      <button id="chat-toggle-btn" class="icon-btn chat-toggle-pc" title="Sohbet">💬 Sohbet</button>
+      <span id="player-name" class="player-name"></span>
     </div>
-    <button class="icon-btn" id="p-close" aria-label="Kapat">✕</button>
-  </div>
+  </header>
 
-  <div class="sheet-actions">
-    <button id="p-join-btn" class="btn btn-teal btn-block">Bu İle Katıl</button>
-    <button id="p-attack-btn" class="btn btn-red btn-block" disabled>Saldır ⚔️</button>
-  </div>
+  <!-- Harita -->
+  <main class="map-wrap">
+    <svg id="map-svg"></svg>
+    <div id="map-loading" class="map-loading">Harita yükleniyor…</div>
+  </main>
 
-  <button id="p-chat-toggle" class="btn btn-ghost btn-block">💬 İl Sohbetini Aç</button>
-</section>
+  <!-- İl paneli -->
+  <aside id="province-panel" class="panel province-panel hidden">
+    <button class="panel-close" data-close="province-panel">✕</button>
+    <h2 id="pp-name">—</h2>
+    <div id="pp-status" class="pp-status"></div>
 
-<!-- ============ Sohbet paneli ============ -->
-<section id="chat-sheet" class="sheet chat-sheet">
-  <div class="sheet-handle" id="chat-drag-handle"></div>
-  <div class="sheet-head">
-    <div>
-      <div class="sheet-eyebrow">SOHBET</div>
-      <h2 id="chat-title">—</h2>
-    </div>
-    <button class="icon-btn" id="chat-close" aria-label="Kapat">✕</button>
-  </div>
+    <div id="pp-resources" class="resource-grid"></div>
 
-  <div id="chat-messages" class="chat-messages"></div>
+    <div id="pp-buildings" class="buildings-list"></div>
 
-  <div class="emoji-bar" id="emoji-bar"></div>
+    <div id="pp-actions" class="pp-actions"></div>
+  </aside>
 
-  <form id="chat-form" class="chat-form">
-    <input id="chat-input" class="chat-input" type="text" maxlength="300" placeholder="Bir şeyler yaz…" autocomplete="off" />
-    <button type="submit" class="chat-send" aria-label="Gönder">➤</button>
-  </form>
-</section>
+  <!-- Bildirim merkezi -->
+  <aside id="notif-panel" class="panel notif-panel hidden">
+    <button class="panel-close" data-close="notif-panel">✕</button>
+    <h2>Bildirimler</h2>
+    <div id="notif-list" class="notif-list"></div>
+  </aside>
 
-<script type="module" src="main.js"></script>
+  <!-- Sıralama -->
+  <aside id="leaderboard-panel" class="panel leaderboard-panel hidden">
+    <button class="panel-close" data-close="leaderboard-panel">✕</button>
+    <h2>🏆 Sıralama</h2>
+    <table class="leaderboard-table">
+      <thead><tr><th>#</th><th>Oyuncu</th><th>İl</th><th>Asker</th><th>Puan</th></tr></thead>
+      <tbody id="leaderboard-body"></tbody>
+    </table>
+  </aside>
+
+  <!-- İttifak paneli -->
+  <aside id="alliance-panel" class="panel alliance-panel hidden">
+    <button class="panel-close" data-close="alliance-panel">✕</button>
+    <h2>🤝 İttifak</h2>
+    <div id="alliance-body"></div>
+  </aside>
+
+  <!-- Sohbet: PC'de açılır panel, mobilde floating -->
+  <aside id="chat-panel" class="panel chat-panel hidden">
+    <button class="panel-close" data-close="chat-panel">✕</button>
+    <h2>💬 Sohbet</h2>
+    <div id="chat-messages" class="chat-messages"></div>
+    <form id="chat-form" class="chat-form">
+      <input id="chat-input" type="text" maxlength="300" placeholder="Mesaj yaz…" autocomplete="off" />
+      <button type="submit">Gönder</button>
+    </form>
+  </aside>
+
+  <button id="chat-toggle-mobile" class="chat-toggle-mobile">💬</button>
+
+  <div id="toast-container" class="toast-container"></div>
+</div>
+
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
