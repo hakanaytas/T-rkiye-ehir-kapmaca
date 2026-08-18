@@ -1,15 +1,16 @@
 {
-  "name": "Türkiye Fetih",
-  "short_name": "Fetih",
-  "description": "Gerçek zamanlı çok oyunculu Türkiye il fethetme stratejisi.",
+  "name": "Canlı Türkiye Haritası — Sosyal Oyun",
+  "short_name": "TürkiyeCanlı",
+  "description": "81 ili seç, ekibini kur, sohbet et, emoji at, eğlenceli saldırılar düzenle.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "orientation": "landscape",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0f1e",
+  "theme_color": "#0a0f1e",
+  "lang": "tr",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }

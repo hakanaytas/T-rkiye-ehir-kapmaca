@@ -160,6 +160,35 @@ export function getProvincePath(provinceId) {
   return pathById[provinceId] || null;
 }
 
+/** Bir ili istenen renkle boyar (ele geçirilmiş il rengi) ya da renk temizler. */
+export function setProvinceColor(provinceId, color) {
+  const el = pathById[provinceId];
+  if (!el) return;
+  if (color) {
+    el.style.fill = color;
+    el.style.color = color; // currentColor tabanlı glow efekti için
+    el.classList.add("captured");
+  } else {
+    el.style.fill = "";
+    el.style.color = "";
+    el.classList.remove("captured");
+  }
+}
+
+/** İlin ekran (viewport) koordinatlarındaki merkezini döndürür; overlay/animasyon konumlamak için. */
+export function getProvinceScreenCenter(provinceId) {
+  const el = pathById[provinceId];
+  if (!el || !svgEl) return null;
+  const bbox = el.getBBox();
+  const pt = svgEl.createSVGPoint();
+  pt.x = bbox.x + bbox.width / 2;
+  pt.y = bbox.y + bbox.height / 2;
+  const ctm = el.getScreenCTM();
+  if (!ctm) return null;
+  const screenPt = pt.matrixTransform(ctm);
+  return { x: screenPt.x, y: screenPt.y };
+}
+
 // --- Basit sürükle / tekerlek ile zoom (ağır kütüphane yok) ---
 function setupPanZoom(svg, group) {
   let scale = 1, tx = 0, ty = 0;

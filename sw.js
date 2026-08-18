@@ -1,7 +1,7 @@
 // sw.js
 // ÖNEMLİ: Her deploy'da CACHE_VERSION'ı artırın, aksi halde kullanıcılar
 // eski (cache'lenmiş) sürümü görmeye devam eder.
-const CACHE_VERSION = "fetih-v1";
+const CACHE_VERSION = "fetih-v2";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -9,12 +9,10 @@ const CORE_ASSETS = [
   "./style.css",
   "./main.js",
   "./map.js",
-  "./economy.js",
-  "./war.js",
-  "./alliance.js",
+  "./attack.js",
   "./chat.js",
+  "./reactions.js",
   "./notifications.js",
-  "./leaderboard.js",
   "./provinces-data.js",
   "./firebase-config.js",
   "./icon-192.png",
@@ -39,17 +37,21 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  // Firebase / dış API çağrılarına dokunma; sadece kendi statik dosyalarımızı cache'le.
+  // Firebase/uzak istekleri her zaman ağdan al; sadece kendi statik dosyalarımızı cache'le.
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((res) => {
-        const clone = res.clone();
-        caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
-        return res;
-      }).catch(() => cached);
+      const network = fetch(event.request)
+        .then((res) => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
+          }
+          return res;
+        })
+        .catch(() => cached);
+      return cached || network;
     })
   );
 });
