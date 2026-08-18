@@ -167,7 +167,7 @@ export async function tickOccupation(provinceId) {
 
     const lastTick = data.lastUnrestTick ? data.lastUnrestTick.toMillis?.() ?? data.lastUnrestTick : Date.now();
     const elapsedMin = Math.max(0, (Date.now() - lastTick) / 60000);
-    const decay = elapsedMin * 2; // dakikada ~2 puan huzursuzluk düşer
+    const decay = elapsedMin * 10; // dakikada ~10 puan huzursuzluk düşer (100 puan ≈ 10 dakikada biter)
     const newUnrest = Math.max(0, (data.unrest || 100) - decay);
 
     tx.update(ref, {

@@ -1,24 +1,24 @@
 // sw.js
 // ÖNEMLİ: Her deploy'da CACHE_VERSION'ı artırın, aksi halde kullanıcılar
 // eski (cache'lenmiş) sürümü görmeye devam eder.
-const CACHE_VERSION = "fetih-v1";
+const CACHE_VERSION = "fetih-v2";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./css/style.css",
-  "./js/main.js",
-  "./js/map.js",
-  "./js/economy.js",
-  "./js/war.js",
-  "./js/alliance.js",
-  "./js/chat.js",
-  "./js/notifications.js",
-  "./js/leaderboard.js",
-  "./js/provinces-data.js",
-  "./js/firebase-config.js",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
+  "./style.css",
+  "./main.js",
+  "./map.js",
+  "./economy.js",
+  "./war.js",
+  "./alliance.js",
+  "./chat.js",
+  "./notifications.js",
+  "./leaderboard.js",
+  "./provinces-data.js",
+  "./firebase-config.js",
+  "./icon-192.png",
+  "./icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {

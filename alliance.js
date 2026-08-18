@@ -47,7 +47,7 @@ export async function declineAllianceInvite(inviteId) {
 export async function leaveAlliance(allianceId, uid) {
   await updateDoc(doc(db, "alliances", allianceId), {
     members: arrayRemove(uid),
-    [`ceasefireUntil.${uid}`]: Date.now() + 1000 * 60 * 30, // 30 dakika ateşkes
+    [`ceasefireUntil.${uid}`]: Date.now() + 1000 * 60 * 5, // 5 dakika ateşkes
   });
   await updateDoc(doc(db, "players", uid), { allianceId: null });
 }
