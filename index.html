@@ -39,6 +39,8 @@
     <span class="pill" id="stat-online" title="Aktif oyuncu">👤 <b>0</b></span>
     <span class="pill" id="stat-captured" title="Ele geçirilmiş il">🔥 <b>0</b>/81</span>
   </div>
+  <button id="events-toggle" class="icon-btn topbar-icon-btn" title="Olaylar" aria-label="Olaylar">📢</button>
+  <button id="ready-btn" class="pill ready-pill" title="Herkes hazır olunca final oynar">🏁 <span id="ready-label">Hazırım</span> <b id="ready-count">0/0</b></button>
   <button id="me-btn" class="me-chip" title="Profilim">
     <span id="me-dot" class="me-dot"></span>
     <span id="me-name">—</span>
@@ -55,6 +57,9 @@
 
   <!-- İl üstü geçici etiketler (ör. "HAKAN'IN EKİBİ") -->
   <div id="label-layer" class="label-layer"></div>
+
+  <!-- İl üstü kısa sohbet baloncukları -->
+  <div id="bubble-layer" class="label-layer"></div>
 
   <div class="map-hint" id="map-hint">Bir il seçmek için haritaya dokun</div>
 </main>
@@ -80,8 +85,63 @@
     <button id="p-attack-btn" class="btn btn-red btn-block" disabled>Saldır ⚔️</button>
   </div>
 
+  <div class="group-info" id="group-info">
+    <div class="support-row">
+      <span class="support-label">Destek</span>
+      <div class="support-bar"><div class="support-fill" id="support-fill"></div></div>
+      <span class="support-pct" id="support-pct">50%</span>
+    </div>
+    <div class="group-badges" id="group-badges"></div>
+  </div>
+
+  <div class="challenge-box" id="challenge-box">
+    <div class="challenge-title">⚔️ Meydan Okuma Gönder</div>
+    <div class="challenge-games" id="challenge-games"></div>
+  </div>
+
+  <button id="p-alliance-btn" class="btn btn-ghost btn-block">🤝 İttifak Teklif Et</button>
+
+  <form id="bubble-form" class="bubble-form">
+    <input id="bubble-input" class="chat-input" type="text" maxlength="60" placeholder="Haritada baloncuk gönder…" autocomplete="off" />
+    <button type="submit" class="chat-send" aria-label="Gönder">💬</button>
+  </form>
+
   <button id="p-chat-toggle" class="btn btn-ghost btn-block">💬 İl Sohbetini Aç</button>
 </section>
+
+<!-- ============ Olaylar paneli (canlı akış) ============ -->
+<aside id="events-panel" class="events-panel">
+  <div class="events-head">
+    <span>📢 Olaylar</span>
+    <button class="icon-btn" id="events-close" aria-label="Kapat">✕</button>
+  </div>
+  <div id="events-list" class="events-list"></div>
+</aside>
+
+<!-- ============ Gelen teklif bandı (meydan okuma / ittifak) ============ -->
+<div id="offer-banner" class="offer-banner hidden">
+  <div class="offer-text" id="offer-text"></div>
+  <div class="offer-actions">
+    <button id="offer-accept" class="btn btn-teal">Kabul Et</button>
+    <button id="offer-decline" class="btn btn-ghost">Reddet</button>
+  </div>
+</div>
+
+<!-- ============ Mini oyun modalı ============ -->
+<div id="minigame-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-title" id="minigame-title">Düello!</div>
+    <div class="modal-sub" id="minigame-sub"></div>
+    <div id="minigame-content" class="minigame-content"></div>
+  </div>
+</div>
+
+<!-- ============ Final animasyonu ============ -->
+<div id="finale-overlay" class="finale-overlay hidden">
+  <div id="finale-countdown" class="finale-countdown"></div>
+  <div id="finale-text" class="finale-text hidden">TÜRKİYE BİRLEŞTİ! 🇹🇷</div>
+  <div id="finale-particles" class="finale-particles"></div>
+</div>
 
 <!-- ============ Sohbet paneli ============ -->
 <section id="chat-sheet" class="sheet chat-sheet">

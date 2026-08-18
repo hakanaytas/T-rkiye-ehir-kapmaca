@@ -18,6 +18,8 @@ let svgEl = null;
 let pathById = {};
 let onProvinceClick = null;
 let projection = null;
+let provincesGroup = null;   // "provinces-layer" <g> referansı (ittifak çizgilerini de içine ekleyebilmek için)
+let allianceLayer = null;    // ittifak çizgileri için ayrı bir alt katman
 
 /** Basit eşdikdörtgen (equirectangular) izdüşüm, enlem düzeltmeli. */
 function buildProjection(bounds) {
@@ -138,8 +140,59 @@ export async function initMap(svg, clickHandler) {
   }
 
   svgEl.appendChild(group);
+  provincesGroup = group;
   setupPanZoom(svgEl, group);
   return { provinceCount: Object.keys(pathById).length };
+}
+
+// ---------------------------------------------------------------- ittifak çizgileri (additive)
+function ensureAllianceLayer() {
+  if (allianceLayer || !provincesGroup) return allianceLayer;
+  allianceLayer = document.createElementNS(SVG_NS, "g");
+  allianceLayer.setAttribute("id", "alliance-layer");
+  // Çizgiler illerin ÜSTÜNDE ama tıklamaları engellemesin.
+  allianceLayer.setAttribute("pointer-events", "none");
+  provincesGroup.appendChild(allianceLayer);
+  return allianceLayer;
+}
+
+function provinceCenterLocal(provinceId) {
+  const el = pathById[provinceId];
+  if (!el) return null;
+  const b = el.getBBox();
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+}
+
+/**
+ * İl-ittifak çiftlerini haritada ince, parlayan bir bağlantı çizgisiyle gösterir.
+ * @param {Array<{a:number,b:number}>} pairs
+ */
+export function renderAllianceLines(pairs) {
+  const layer = ensureAllianceLayer();
+  if (!layer) return;
+  layer.innerHTML = "";
+  for (const { a, b } of pairs) {
+    const ca = provinceCenterLocal(a);
+    const cb = provinceCenterLocal(b);
+    if (!ca || !cb) continue;
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", ca.x.toFixed(2));
+    line.setAttribute("y1", ca.y.toFixed(2));
+    line.setAttribute("x2", cb.x.toFixed(2));
+    line.setAttribute("y2", cb.y.toFixed(2));
+    line.setAttribute("class", "alliance-line");
+    layer.appendChild(line);
+
+    const dot = document.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("r", "2.2");
+    dot.setAttribute("class", "alliance-pulse");
+    const mid = document.createElementNS(SVG_NS, "animateMotion");
+    mid.setAttribute("dur", "2.4s");
+    mid.setAttribute("repeatCount", "indefinite");
+    mid.setAttribute("path", `M${ca.x.toFixed(2)},${ca.y.toFixed(2)} L${cb.x.toFixed(2)},${cb.y.toFixed(2)}`);
+    dot.appendChild(mid);
+    layer.appendChild(dot);
+  }
 }
 
 /** Bir ilin görsel durumunu günceller (sadece o ilin class'ı değişir). */
